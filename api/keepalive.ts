@@ -16,7 +16,7 @@ export default async function handler(): Promise<Response> {
   }
 
   try {
-    const res = await fetch(`${url}/rest/v1/favorites?select=id&limit=1`, {
+    const res = await fetch(`${url}/rest/v1/favorites?select=movie_id&limit=1`, {
       headers: { apikey: key, Authorization: `Bearer ${key}` },
     });
     return Response.json(
