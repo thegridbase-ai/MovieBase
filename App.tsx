@@ -6,13 +6,13 @@ import InfiniteScrollGrid from './components/InfiniteScrollGrid';
 import ForYouSection from './components/ForYouSection';
 import LoginModal from './components/LoginModal';
 import FavoritesModal from './components/FavoritesModal';
+import RateTitlesModal from './components/RateTitlesModal';
 import MovieDetailModal from './components/MovieDetailModal';
 import { Movie, MediaType } from './types';
 import { motion, AnimatePresence } from 'framer-motion';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { RegionProvider, useRegion } from './context/RegionContext';
-import { useFavorites } from './hooks/useFavorites';
-import { useStreamingAlerts } from './hooks/useStreamingAlerts';
+import { syncTasteWithRemote, detachTasteRemote } from './services/tasteStore';
 import { fetchMovieById } from './services/tmdbService';
 
 // Genre mapping: Category name -> TMDB Genre ID
@@ -56,8 +56,6 @@ const DeepLinkResolver: React.FC<{
 
 const AppContent: React.FC = () => {
   const { isLoggedIn, checkSession } = useAuth();
-  const { favoriteIds } = useFavorites(isLoggedIn);
-  const { alertIds } = useStreamingAlerts(isLoggedIn);
   const { region, setRegion } = useRegion();
   const [activeFilter, setActiveFilter] = useState<MediaType>('all');
   const [searchQuery, setSearchQuery] = useState('');
@@ -67,11 +65,13 @@ const AppContent: React.FC = () => {
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
   const [forYouActive, setForYouActive] = useState(false);
 
-  const forYouAvailable = isLoggedIn && (favoriteIds.size + alertIds.size) > 0;
+  const [isRateOpen, setIsRateOpen] = useState(false);
 
+  // Mirror the local taste profile to the account while logged in.
   useEffect(() => {
-    if (!forYouAvailable && forYouActive) setForYouActive(false);
-  }, [forYouAvailable, forYouActive]);
+    if (isLoggedIn) void syncTasteWithRemote();
+    else detachTasteRemote();
+  }, [isLoggedIn]);
 
   const handleLogin = async () => {
     await checkSession();
@@ -184,12 +184,12 @@ const AppContent: React.FC = () => {
               onClearSearch={handleClearSearch}
               onCategoryFilter={handleCategoryFilter}
               activeCategory={activeCategory}
-              forYouAvailable={forYouAvailable}
               forYouActive={forYouActive}
               onForYouToggle={handleForYouToggle}
+              onOpenRate={() => setIsRateOpen(true)}
           />
           {forYouActive ? (
-            <ForYouSection onMovieClick={handleMovieClick} />
+            <ForYouSection onMovieClick={handleMovieClick} onOpenRate={() => setIsRateOpen(true)} />
           ) : (
             <InfiniteScrollGrid
                 onMovieClick={handleMovieClick}
@@ -220,6 +220,17 @@ const AppContent: React.FC = () => {
             isOpen={isLoginOpen}
             onClose={() => setIsLoginOpen(false)}
             onLogin={handleLogin}
+        />
+
+        <RateTitlesModal
+            isOpen={isRateOpen}
+            onClose={() => setIsRateOpen(false)}
+            onDone={() => {
+              setIsRateOpen(false);
+              setSearchQuery('');
+              setActiveCategory(null);
+              setForYouActive(true);
+            }}
         />
 
         {isLoggedIn && (

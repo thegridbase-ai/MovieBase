@@ -6,6 +6,7 @@ import { getBackdropUrl, fetchTrailer } from '../services/tmdbService';
 import { getRatings, ratingsKey } from '../services/ratingsService';
 import ProviderChips, { subscriptionProviders, hasOnlyTransactional } from './ProviderChips';
 import { useFavorites } from '../hooks/useFavorites';
+import TasteButtons from './TasteButtons';
 import { useStreamingAlerts } from '../hooks/useStreamingAlerts';
 import { useAuth } from '../context/AuthContext';
 
@@ -294,6 +295,10 @@ export const MovieDetailModal: React.FC<MovieDetailModalProps> = ({ movie, onClo
                 )}
               </button>
             </div>
+          </div>
+
+          <div className="mb-5">
+            <TasteButtons movie={movie} size="full" />
           </div>
 
           <div className="flex flex-wrap items-center gap-4 mb-6">

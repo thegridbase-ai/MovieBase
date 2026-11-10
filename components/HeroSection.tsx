@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Search, SlidersHorizontal, X, Sparkles } from 'lucide-react';
+import { Search, SlidersHorizontal, X, Sparkles, Dices } from 'lucide-react';
 import { motion } from 'framer-motion';
 
 interface HeroSectionProps {
@@ -8,9 +8,9 @@ interface HeroSectionProps {
   onClearSearch?: () => void;
   onCategoryFilter?: (category: string | null) => void;
   activeCategory?: string | null;
-  forYouAvailable?: boolean;
   forYouActive?: boolean;
   onForYouToggle?: () => void;
+  onOpenRate?: () => void;
 }
 
 const HeroSection: React.FC<HeroSectionProps> = ({
@@ -19,9 +19,9 @@ const HeroSection: React.FC<HeroSectionProps> = ({
   onClearSearch,
   onCategoryFilter,
   activeCategory,
-  forYouAvailable = false,
   forYouActive = false,
   onForYouToggle,
+  onOpenRate,
 }) => {
   const [query, setQuery] = useState('');
   const [strokeWidth, setStrokeWidth] = useState('2px');
@@ -232,7 +232,7 @@ const HeroSection: React.FC<HeroSectionProps> = ({
                     </motion.span>
                 );
             })}
-            {forYouAvailable && onForYouToggle && (
+            {onForYouToggle && (
                 <motion.span
                     onClick={onForYouToggle}
                     className={`px-3 py-1 rounded-sm border text-xs font-mono uppercase font-bold cursor-pointer transition-all duration-300 inline-flex items-center gap-1.5 ${
@@ -251,10 +251,31 @@ const HeroSection: React.FC<HeroSectionProps> = ({
                         boxShadow: '0 0 20px rgba(168, 85, 247, 0.4)'
                     }}
                     whileTap={{ scale: 0.95 }}
-                    title="Recommendations based on your favorites and notifications"
+                    title="What to watch next, based on what you rated"
                 >
                     <Sparkles size={12} />
-                    For You
+                    Watch Next
+                </motion.span>
+            )}
+            {onOpenRate && (
+                <motion.span
+                    onClick={onOpenRate}
+                    className="px-3 py-1 rounded-sm border border-cyber-green/40 text-cyber-green/80 text-xs font-mono uppercase font-bold cursor-pointer transition-all duration-300 inline-flex items-center gap-1.5"
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.6 + 9 * 0.05, duration: 0.3 }}
+                    whileHover={{
+                        scale: 1.1,
+                        y: -3,
+                        backgroundColor: 'rgba(0, 255, 136, 0.15)',
+                        borderColor: 'rgba(0, 255, 136, 0.6)',
+                        boxShadow: '0 0 20px rgba(0, 255, 136, 0.35)'
+                    }}
+                    whileTap={{ scale: 0.95 }}
+                    title="Get a random list and mark what you have seen"
+                >
+                    <Dices size={12} />
+                    Rate Titles
                 </motion.span>
             )}
         </motion.div>

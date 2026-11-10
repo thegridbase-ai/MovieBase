@@ -1,173 +1,174 @@
 import React, { useEffect, useState } from 'react';
-import { Sparkles } from 'lucide-react';
-import { Movie } from '../types';
+import { Sparkles, User, Users, Baby, Bookmark, Dices } from 'lucide-react';
+import { Movie, WatchNextTab } from '../types';
 import { useAuth } from '../context/AuthContext';
+import { useRegion } from '../context/RegionContext';
 import { useFavorites } from '../hooks/useFavorites';
 import { useStreamingAlerts } from '../hooks/useStreamingAlerts';
+import { useTaste } from '../hooks/useTaste';
 import { supabase } from '../services/supabaseClient';
-import { tmdbFetch } from '../services/tmdbClient';
+import { enrichMoviesWithProviders } from '../services/tmdbService';
+import { fetchWatchNext, SeedRef } from '../services/recommendService';
 import MovieCard from './MovieCard';
 
 interface ForYouSectionProps {
   onMovieClick: (m: Movie) => void;
+  onOpenRate: () => void;
 }
 
-interface SourceRef {
-  id: number;
-  media_type: 'movie' | 'tv';
-}
+const TABS: { id: WatchNextTab; label: string; hint: string; Icon: typeof User }[] = [
+  { id: 'me', label: 'For Me', hint: 'BASED ON WHAT YOU LIKED', Icon: User },
+  { id: 'family', label: 'Family', hint: 'PG-13 AND UNDER, NO HORROR', Icon: Users },
+  { id: 'kids', label: 'With Kids', hint: 'G / PG ANIMATION + FAMILY', Icon: Baby },
+  { id: 'watchlist', label: 'Watchlist', hint: 'TITLES YOU WANT TO WATCH', Icon: Bookmark },
+];
 
-const shuffle = <T,>(arr: T[]): T[] => {
-  const copy = [...arr];
-  for (let i = copy.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [copy[i], copy[j]] = [copy[j], copy[i]];
+// Favorites and streaming alerts count as extra "liked" signals.
+const loadExtraSeeds = async (): Promise<SeedRef[]> => {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return [];
+  const [favRes, alertRes] = await Promise.all([
+    supabase.from('favorites').select('movie_id, movie_data').eq('user_id', user.id),
+    supabase.from('streaming_alerts').select('movie_id, media_type').eq('user_id', user.id),
+  ]);
+  const seeds: SeedRef[] = [];
+  for (const f of favRes.data ?? []) {
+    const m = f.movie_data as Movie | null;
+    seeds.push({
+      id: m?.id ?? f.movie_id,
+      media_type: m?.media_type === 'tv' ? 'tv' : 'movie',
+      genre_ids: m?.genre_ids,
+    });
   }
-  return copy;
+  for (const a of alertRes.data ?? []) {
+    seeds.push({ id: a.movie_id, media_type: a.media_type === 'tv' ? 'tv' : 'movie' });
+  }
+  return seeds;
 };
 
-const ForYouSection: React.FC<ForYouSectionProps> = ({ onMovieClick }) => {
+const ForYouSection: React.FC<ForYouSectionProps> = ({ onMovieClick, onOpenRate }) => {
   const { isLoggedIn } = useAuth();
+  const { region } = useRegion();
   const { favoriteIds } = useFavorites(isLoggedIn);
   const { alertIds } = useStreamingAlerts(isLoggedIn);
-  const totalSignals = favoriteIds.size + alertIds.size;
+  const { entries, count } = useTaste();
+  const accountSignals = isLoggedIn ? favoriteIds.size + alertIds.size : 0;
 
-  const [recommendations, setRecommendations] = useState<Movie[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [tab, setTab] = useState<WatchNextTab>('me');
+  const [movies, setMovies] = useState<Movie[]>([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!isLoggedIn || totalSignals === 0) {
-      setRecommendations([]);
-      setLoading(false);
-      return;
-    }
+    setMovies([]);
+  }, [tab]);
 
+  useEffect(() => {
     let isMounted = true;
-
     const load = async () => {
       setLoading(true);
       try {
-        const { data: { user } } = await supabase.auth.getUser();
-        if (!user) return;
-
-        const [favRes, alertRes] = await Promise.all([
-          supabase.from('favorites').select('movie_id, movie_data').eq('user_id', user.id),
-          supabase.from('streaming_alerts').select('movie_id, media_type').eq('user_id', user.id),
-        ]);
-
-        const sources: SourceRef[] = [];
-        for (const f of favRes.data ?? []) {
-          const m = (f as any).movie_data as Movie | null;
-          if (m && typeof m.id === 'number') {
-            sources.push({ id: m.id, media_type: m.media_type === 'tv' ? 'tv' : 'movie' });
-          } else if ((f as any).movie_id) {
-            sources.push({ id: (f as any).movie_id, media_type: 'movie' });
-          }
-        }
-        for (const a of alertRes.data ?? []) {
-          sources.push({
-            id: (a as any).movie_id,
-            media_type: (a as any).media_type === 'tv' ? 'tv' : 'movie',
-          });
-        }
-
-        if (!isMounted) return;
-        if (sources.length === 0) {
-          setRecommendations([]);
-          setLoading(false);
-          return;
-        }
-
-        const knownIds = new Set(sources.map((s) => s.id));
-        const bases = shuffle(sources).slice(0, 3);
-        const collected: Movie[] = [];
-        const collectedIds = new Set<number>();
-
-        for (const base of bases) {
-          if (collected.length >= 4) break;
-          try {
-            const r = await tmdbFetch(
-              `/${base.media_type}/${base.id}/recommendations`,
-              { language: 'en-US', page: 1 },
-            );
-            if (!r.ok) continue;
-            const data = await r.json();
-            for (const item of (data.results ?? []).slice(0, 8)) {
-              if (collected.length >= 4) break;
-              if (knownIds.has(item.id) || collectedIds.has(item.id)) continue;
-              if (!item.poster_path) continue;
-              collectedIds.add(item.id);
-              collected.push({
-                id: item.id,
-                title: item.title || item.name,
-                poster_path: item.poster_path,
-                backdrop_path: item.backdrop_path,
-                overview: item.overview,
-                vote_average: item.vote_average,
-                release_date: item.release_date || item.first_air_date || 'TBA',
-                genre_ids: item.genre_ids ?? [],
-                media_type: base.media_type,
-              });
-            }
-          } catch (err) {
-            console.error('TMDB recommendations fetch failed for', base, err);
-          }
-        }
-
-        if (isMounted) {
-          setRecommendations(collected);
-          setLoading(false);
-        }
+        const extraSeeds = accountSignals > 0 ? await loadExtraSeeds() : [];
+        const hasSignals = entries.length + extraSeeds.length > 0;
+        // "For Me" needs a profile; the family and kids tabs still work
+        // without one, they are just not personalised yet.
+        const list = tab === 'me' && !hasSignals ? [] : await fetchWatchNext(tab, entries, extraSeeds);
+        const enriched = await enrichMoviesWithProviders(list, region);
+        if (isMounted) setMovies(enriched);
       } catch (err) {
-        console.error('ForYou load failed:', err);
+        console.error('Watch Next load failed:', err);
+      } finally {
         if (isMounted) setLoading(false);
       }
     };
-
     load();
     return () => { isMounted = false; };
-  }, [isLoggedIn, totalSignals]);
+    // `count` stands in for `entries`: the list refreshes after each verdict.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab, count, accountSignals, region]);
 
-  if (!isLoggedIn) return null;
-  if (totalSignals === 0) return null;
-  if (!loading && recommendations.length === 0) return null;
+  const active = TABS.find((t) => t.id === tab) ?? TABS[0];
+  const showSkeleton = loading && movies.length === 0;
 
   return (
     <div className="w-full max-w-7xl mx-auto px-4 py-8">
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-5">
         <h2 className="text-2xl font-mono text-white flex items-center gap-2">
           <span className="w-2 h-8 bg-cyber-cyan block shadow-[0_0_10px_#00F3FF]"></span>
           <Sparkles className="text-cyber-cyan drop-shadow-[0_0_6px_rgba(0,243,255,0.6)]" size={22} />
-          For You
+          Watch Next
         </h2>
-        <div className="text-xs font-mono text-cyber-cyan border border-cyber-cyan/30 px-2 py-1 rounded bg-cyber-cyan/5">
-          BASED ON YOUR LIST + ALERTS
-        </div>
+        <button
+          onClick={onOpenRate}
+          className="inline-flex items-center gap-2 px-4 min-h-[44px] rounded border border-cyber-cyan/50 bg-cyber-cyan/10 text-cyber-cyan font-mono text-xs uppercase font-bold hover:bg-cyber-cyan/20 hover:shadow-neon-cyan transition-all"
+        >
+          <Dices size={16} />
+          Rate titles
+          <span className="text-cyber-cyan/60">{count}</span>
+        </button>
       </div>
 
-      {loading ? (
+      <div className="flex gap-2 overflow-x-auto pb-2 mb-2 [scrollbar-width:thin] [scrollbar-color:rgba(0,243,255,0.3)_transparent]" role="tablist">
+        {TABS.map(({ id, label, Icon }) => {
+          const isActive = id === tab;
+          return (
+            <button
+              key={id}
+              role="tab"
+              aria-selected={isActive}
+              onClick={() => setTab(id)}
+              className={`shrink-0 inline-flex items-center gap-2 px-4 min-h-[44px] rounded-sm border font-mono text-xs uppercase font-bold transition-all duration-300 ${
+                isActive
+                  ? 'border-cyber-cyan bg-cyber-cyan/20 text-cyber-cyan shadow-neon-cyan'
+                  : 'border-cyber-cyan/20 text-cyber-cyan/60 hover:border-cyber-cyan/50 hover:text-cyber-cyan'
+              }`}
+            >
+              <Icon size={14} />
+              {label}
+            </button>
+          );
+        })}
+      </div>
+      <p className="text-[11px] font-mono text-cyber-cyan/60 mb-6">{active.hint}</p>
+
+      {showSkeleton ? (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 md:gap-6">
-          {Array.from({ length: 4 }).map((_, i) => (
+          {Array.from({ length: 8 }).map((_, i) => (
             <div key={i} className="aspect-[2/3] bg-cyber-panel rounded-xl border border-cyber-cyan/10 animate-pulse" />
           ))}
         </div>
+      ) : movies.length === 0 ? (
+        <div className="text-center py-16 border border-dashed border-cyber-cyan/20 rounded-xl font-mono">
+          <p className="text-lg text-gray-300 mb-2">
+            {tab === 'watchlist' ? 'NOTHING ON YOUR WATCHLIST YET' : 'TELL ME WHAT YOU HAVE SEEN'}
+          </p>
+          <p className="text-sm text-gray-500 mb-6 px-4">
+            {tab === 'watchlist'
+              ? 'Mark titles as "want to watch" and they show up here.'
+              : 'Rate a few random titles and this list starts to fit you.'}
+          </p>
+          <button
+            onClick={onOpenRate}
+            className="inline-flex items-center gap-2 px-5 min-h-[44px] rounded border border-cyber-cyan/50 bg-cyber-cyan/10 text-cyber-cyan text-xs uppercase font-bold hover:bg-cyber-cyan/20 transition-colors"
+          >
+            <Dices size={16} />
+            Rate titles
+          </button>
+        </div>
       ) : (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 md:gap-6 auto-rows-auto grid-flow-dense">
-          {recommendations.map((m, index) => {
-            // Same bento rhythm as the main grid: hero, large, quartet, flow.
-            let gridClass = "col-span-1 aspect-[2/3]";
+          {movies.map((m, index) => {
+            // Same bento rhythm as the main grid: hero, large, then flow.
+            let gridClass = 'col-span-1 aspect-[2/3]';
             let cardVariant: 'standard' | 'featured' | 'large' = 'standard';
             if (index === 0) {
-              gridClass = "col-span-2 md:col-span-4 h-[50vh] md:h-[600px]";
+              gridClass = 'col-span-2 md:col-span-4 h-[50vh] md:h-[600px]';
               cardVariant = 'featured';
             } else if (index === 1) {
-              gridClass = "col-span-2 md:col-span-2 md:row-span-2 aspect-[2/3] md:aspect-auto";
+              gridClass = 'col-span-2 md:col-span-2 md:row-span-2 aspect-[2/3] md:aspect-auto';
               cardVariant = 'large';
-            } else if (index >= 2 && index <= 5) {
-              gridClass = "col-span-1 md:col-span-1 aspect-[2/3]";
             }
             return (
-              <div key={m.id} className={gridClass}>
+              <div key={`${m.media_type}-${m.id}`} className={gridClass}>
                 <MovieCard movie={m} onClick={onMovieClick} variant={cardVariant} />
               </div>
             );

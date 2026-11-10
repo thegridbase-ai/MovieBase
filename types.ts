@@ -62,3 +62,17 @@ export type MediaType = 'all' | 'movie' | 'tv' | 'now_playing';
 
 // Supported watch-provider regions for the Navbar region selector.
 export type WatchRegion = 'US' | 'GB' | 'CA' | 'AU' | 'DE' | 'FR' | 'TR' | 'IN';
+
+// Personal verdict on a title. 'liked' / 'disliked' both imply "watched";
+// 'watchlist' means "want to watch".
+export type TasteStatus = 'liked' | 'disliked' | 'watchlist';
+
+export interface TasteEntry {
+  id: number;
+  media_type: 'movie' | 'tv';
+  status: TasteStatus;
+  movie: Movie;
+  updated_at: string;
+}
+
+export type WatchNextTab = 'me' | 'family' | 'kids' | 'watchlist';
