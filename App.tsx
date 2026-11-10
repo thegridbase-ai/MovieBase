@@ -66,6 +66,13 @@ const AppContent: React.FC = () => {
   const [forYouActive, setForYouActive] = useState(false);
 
   const [isRateOpen, setIsRateOpen] = useState(false);
+  const [watchNextRefresh, setWatchNextRefresh] = useState(0);
+
+  // Closing a rating session reloads Watch Next with the new verdicts.
+  const closeRate = () => {
+    setIsRateOpen(false);
+    setWatchNextRefresh((n) => n + 1);
+  };
 
   // Mirror the local taste profile to the account while logged in.
   useEffect(() => {
@@ -105,9 +112,17 @@ const AppContent: React.FC = () => {
       if (next) {
         setSearchQuery('');
         setActiveCategory(null);
+        setActiveFilter((f) => (f === 'now_playing' ? 'all' : f));
       }
       return next;
     });
+  };
+
+  // Movies / Series narrow the Watch Next lists; In Theaters has no
+  // personalised equivalent, so it returns to the main grid.
+  const handleFilterChange = (filter: MediaType) => {
+    setActiveFilter(filter);
+    if (filter === 'now_playing') setForYouActive(false);
   };
 
   const genreId = activeCategory ? GENRE_MAP[activeCategory] : undefined;
@@ -167,7 +182,7 @@ const AppContent: React.FC = () => {
         </div>
         
         <Navbar
-          onFilterChange={setActiveFilter}
+          onFilterChange={handleFilterChange}
           activeFilter={activeFilter}
           onOpenLogin={() => setIsLoginOpen(true)}
           onOpenFavorites={() => setIsFavoritesOpen(true)}
@@ -189,7 +204,9 @@ const AppContent: React.FC = () => {
               onOpenRate={() => setIsRateOpen(true)}
           />
           {forYouActive ? (
-            <ForYouSection onMovieClick={handleMovieClick} onOpenRate={() => setIsRateOpen(true)} />
+            <ForYouSection onMovieClick={handleMovieClick} onOpenRate={() => setIsRateOpen(true)} refreshSignal={watchNextRefresh}
+              scope={activeFilter === 'movie' || activeFilter === 'tv' ? activeFilter : 'all'}
+            />
           ) : (
             <InfiniteScrollGrid
                 onMovieClick={handleMovieClick}
@@ -224,11 +241,12 @@ const AppContent: React.FC = () => {
 
         <RateTitlesModal
             isOpen={isRateOpen}
-            onClose={() => setIsRateOpen(false)}
+            onClose={closeRate}
             onDone={() => {
-              setIsRateOpen(false);
+              closeRate();
               setSearchQuery('');
               setActiveCategory(null);
+              setActiveFilter((f) => (f === 'now_playing' ? 'all' : f));
               setForYouActive(true);
             }}
         />

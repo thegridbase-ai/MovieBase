@@ -6,6 +6,7 @@ import { tasteKey } from './tasteStore';
 import { Movie, TasteEntry, WatchNextTab } from '../types';
 
 type MediaKind = 'movie' | 'tv';
+export type MediaScope = 'all' | MediaKind;
 
 export interface SeedRef {
   id: number;
@@ -154,20 +155,27 @@ const forMe = async (
   affinity: Map<number, number>,
   total: number,
   known: Set<string>,
+  scope: MediaScope,
 ): Promise<Movie[]> => {
   const liked: SeedRef[] = entries
     .filter((e) => e.status === 'liked')
     .map((e) => ({ id: e.id, media_type: e.media_type }));
-  const seeds = shuffle([...liked, ...extraSeeds]).slice(0, 8);
+  // TMDB recommendations stay within the seed's media type, so a Movies or
+  // Series scope means seeding only from liked titles of that type.
+  const seeds = shuffle([...liked, ...extraSeeds])
+    .filter((s) => scope === 'all' || s.media_type === scope)
+    .slice(0, 8);
   const isNew = (m: Movie) => !known.has(tasteKey(m.id, m.media_type));
 
   if (seeds.length === 0) {
-    // Only dislikes / watchlist so far: fall back to popular titles in the
-    // genres the profile leans towards, away from the ones it rejects.
+    // No liked title to seed from (in this scope): fall back to popular
+    // titles in the genres the profile leans towards, away from the ones it
+    // rejects.
+    const kind: MediaKind = scope === 'tv' ? 'tv' : 'movie';
     const sorted = [...affinity.entries()].sort((x, y) => y[1] - x[1]);
     const top = sorted.filter(([, v]) => v > 0).slice(0, 3).map(([g]) => g);
     const worst = sorted.filter(([, v]) => v < 0).slice(-2).map(([g]) => g);
-    const candidates = await fetchList('/discover/movie', 'movie', {
+    const candidates = await fetchList(`/discover/${kind}`, kind, {
       sort_by: 'popularity.desc',
       'vote_count.gte': 300,
       with_genres: top.join('|') || undefined,
@@ -238,10 +246,14 @@ export const fetchWatchNext = async (
   tab: WatchNextTab,
   entries: TasteEntry[],
   extraSeeds: SeedRef[],
+  scope: MediaScope = 'all',
 ): Promise<Movie[]> => {
+  const inScope = (m: Pick<Movie, 'media_type'>) =>
+    scope === 'all' || (m.media_type === 'tv' ? 'tv' : 'movie') === scope;
+
   if (tab === 'watchlist') {
     return entries
-      .filter((e) => e.status === 'watchlist')
+      .filter((e) => e.status === 'watchlist' && inScope(e))
       .sort((a, b) => b.updated_at.localeCompare(a.updated_at))
       .map((e) => e.movie);
   }
@@ -254,12 +266,12 @@ export const fetchWatchNext = async (
   ]);
 
   if (tab === 'me') {
-    return (await forMe(entries, extraSeeds, affinity, total, known)).slice(0, LIST_SIZE);
+    return (await forMe(entries, extraSeeds, affinity, total, known, scope)).slice(0, LIST_SIZE);
   }
 
   const candidates = tab === 'family' ? await forFamily() : await forKids();
   return rank(
-    candidates.filter((m) => !known.has(tasteKey(m.id, m.media_type))),
+    candidates.filter((m) => inScope(m) && !known.has(tasteKey(m.id, m.media_type))),
     affinity,
     total,
   ).slice(0, LIST_SIZE);

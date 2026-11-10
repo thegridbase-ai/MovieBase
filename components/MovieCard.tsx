@@ -7,6 +7,7 @@ import ProviderChips, { subscriptionProviders } from './ProviderChips';
 import { useFavorites } from '../hooks/useFavorites';
 import { useStreamingAlerts } from '../hooks/useStreamingAlerts';
 import { useAuth } from '../context/AuthContext';
+import TasteButtons from './TasteButtons';
 
 interface MovieCardProps {
   movie: Movie;
@@ -15,9 +16,13 @@ interface MovieCardProps {
   hideHeartButton?: boolean;
   /** External ratings (IMDb / RT); badges render only when present. */
   ratings?: TitleRatings | null;
+  /** Show liked / not for me / want to watch buttons on the card. */
+  showTaste?: boolean;
+  /** Label for the featured card's badge. */
+  featuredBadge?: string;
 }
 
-const MovieCard: React.FC<MovieCardProps> = ({ movie, onClick, variant = 'standard', hideHeartButton = false, ratings = null }) => {
+const MovieCard: React.FC<MovieCardProps> = ({ movie, onClick, variant = 'standard', hideHeartButton = false, ratings = null, showTaste = false, featuredBadge = 'TRENDING #1' }) => {
   const { isLoggedIn } = useAuth();
   const { isFavorite, toggleFavorite } = useFavorites(isLoggedIn);
   const { hasAlert, toggleAlert } = useStreamingAlerts(isLoggedIn);
@@ -217,7 +222,7 @@ const MovieCard: React.FC<MovieCardProps> = ({ movie, onClick, variant = 'standa
       )}
 
       {/* Content Info */}
-      <div className={`absolute bottom-0 left-0 right-0 p-4 md:p-6 z-20 transform ${isFeatured ? 'translate-y-0' : 'translate-y-4 group-hover:translate-y-0'} transition-transform duration-300`}>
+      <div className={`absolute bottom-0 left-0 right-0 p-4 md:p-6 z-20 transform ${isFeatured || showTaste ? 'translate-y-0' : 'translate-y-4 group-hover:translate-y-0'} transition-transform duration-300`}>
         {/* Platform Badge with Neon Styling */}
         <div className="flex items-center gap-2 mb-2">
             {/* When there are 2+ subscription providers with logos, show tiny logo
@@ -236,7 +241,7 @@ const MovieCard: React.FC<MovieCardProps> = ({ movie, onClick, variant = 'standa
             })()}
             {isFeatured && (
                 <span className="px-2 py-1 rounded-sm bg-cyber-purple/30 border border-cyber-purple/50 text-cyber-purple text-xs font-mono font-black uppercase tracking-wider animate-pulse-neon shadow-neon-purple/50">
-                    TRENDING #1
+                    {featuredBadge}
                 </span>
             )}
         </div>
@@ -279,7 +284,12 @@ const MovieCard: React.FC<MovieCardProps> = ({ movie, onClick, variant = 'standa
             </>
           )}
         </div>
-        
+
+        {showTaste && (
+          <div className="mt-3 max-w-[240px]">
+            <TasteButtons movie={movie} />
+          </div>
+        )}
       </div>
       
       {/* Enhanced Neon Glow Effect Overlay */}
